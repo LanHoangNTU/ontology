@@ -28,6 +28,7 @@ import org.apache.jena.rdf.model.Model;
 import org.apache.jena.rdf.model.Property;
 import org.apache.jena.rdf.model.ResIterator;
 import org.apache.jena.rdf.model.Resource;
+import org.apache.jena.rdf.model.ResourceRequiredException;
 import org.apache.jena.rdf.model.Statement;
 import org.apache.jena.rdf.model.StmtIterator;
 import org.apache.jena.riot.Lang;
@@ -151,7 +152,11 @@ public abstract class OntologyRepository<R> {
 						// object = mapToObject(object, stmt.getResource(), persistentKeys); // Recursive
 						
 						// ---- Set main key only (uri) ----
-						modelManager.getExecutor(field.getType()).invokeSetName(object, stmt.getResource()); // Only set uri of sub model
+						try {
+							modelManager.getExecutor(field.getType()).invokeSetName(object, stmt.getResource()); // Only set uri of sub model
+						} catch(ResourceRequiredException e) {
+							modelManager.getExecutor(field.getType()).invokeSetName(object, ""); 
+						} 
 						// -------------------
 						mapper.invokeSetter(field.getName(), obj, object);
 					} catch (Exception e) {
