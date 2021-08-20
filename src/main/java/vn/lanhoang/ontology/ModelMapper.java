@@ -111,7 +111,7 @@ public class ModelMapper implements IModelExecutor {
 					if (fields[index].getType().equals(List.class)) {
 						getSetArray[setIndex].invoke(obj, fields[index].getType().cast(val));
 					} else {
-						parse(fields[index].getType().getName(), getSetArray[setIndex], obj, value);
+						parse(fields[index].getType().getName(), getSetArray[setIndex], obj, val);
 					}
 				} catch (Exception e1) {
 					// TODO Auto-generated catch block
