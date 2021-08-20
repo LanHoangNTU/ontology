@@ -8,10 +8,15 @@ import java.util.List;
 import java.util.Optional;
 
 import org.apache.commons.lang3.ArrayUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import vn.lanhoang.ontology.annotation.Name;
 
 public class ModelMapper implements IModelExecutor {
+	
+	private static final Logger log = LoggerFactory.getLogger(ModelMapper.class);
+
 	private Field[] fields;
 	private String[] fieldNameArray;
 	private Method[] getSetArray;
@@ -102,10 +107,14 @@ public class ModelMapper implements IModelExecutor {
 		if (index >= 0) {
 			String value = val.toString();
 			try {
-				if (value.contains("^^")) {
-					value = value.substring(0, value.indexOf('^'));
+				if (fields[index].getType() == String.class) {
+					if (value.contains("^^")) {
+						value = value.substring(0, value.indexOf('^'));
+					}
+					getSetArray[setIndex].invoke(obj, value);
+				} else {
+					getSetArray[setIndex].invoke(obj, fields[index].getType().cast(val));
 				}
-				getSetArray[setIndex].invoke(obj, fields[index].getType().cast(val));
 			} catch (ClassCastException e) {
 				try {
 					if (fields[index].getType().equals(List.class)) {
@@ -115,9 +124,11 @@ public class ModelMapper implements IModelExecutor {
 					}
 				} catch (Exception e1) {
 					// TODO Auto-generated catch block
+					log.error("Error while casting to {} from {}", val.getClass().getName(), fields[index].getType().getName());
 					e1.printStackTrace();
 				}
 			} catch (Exception e) {
+				log.error("Error while casting to {} from {}", val.getClass().getName(), fields[index].getType().getName());
 				e.printStackTrace();
 			}
 		}
@@ -177,6 +188,8 @@ public class ModelMapper implements IModelExecutor {
 			} else {
 				setter.invoke(obj, val);
 			}
+		} catch (IllegalArgumentException e) {
+			log.error("Error while casting to {} from {}", val.getClass().getName(), className);
 		} catch (Exception e) {
 			// TODO: handle exception
 			e.printStackTrace();
