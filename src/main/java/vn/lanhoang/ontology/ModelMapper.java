@@ -98,19 +98,20 @@ public class ModelMapper implements IModelExecutor {
 	@Override
 	public void invokeSetter(String field, Object obj, Object val) {
 		int index = ArrayUtils.indexOf(fieldNameArray, field);
+		int setIndex = index * 2 + 1;
 		if (index >= 0) {
 			String value = val.toString();
 			try {
 				if (value.contains("^^")) {
 					value = value.substring(0, value.indexOf('^'));
 				}
-				getSetArray[index * 2 + 1].invoke(obj, fields[index].getType().cast(val.toString()));
+				getSetArray[setIndex].invoke(obj, fields[index].getType().cast(val));
 			} catch (ClassCastException e) {
 				try {
 					if (fields[index].getType().equals(List.class)) {
-						getSetArray[index * 2 + 1].invoke(obj, fields[index].getType().cast(val));
+						getSetArray[setIndex].invoke(obj, fields[index].getType().cast(val));
 					} else {
-						parse(fields[index].getType().getName(), getSetArray[index * 2 + 1], obj, value);
+						parse(fields[index].getType().getName(), getSetArray[setIndex], obj, value);
 					}
 				} catch (Exception e1) {
 					// TODO Auto-generated catch block
