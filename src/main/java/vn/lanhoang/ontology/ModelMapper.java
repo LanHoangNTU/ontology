@@ -176,20 +176,24 @@ public class ModelMapper implements IModelExecutor {
 	}
 	
 	public void parse(String className, Method setter, Object obj, Object val) {
+		String value = val.toString();
+		if (value.contains("^^")) {
+			value = value.substring(0, value.indexOf('^'));
+		}
 		try {
 			if (className == Integer.class.getName()) {
-				setter.invoke(obj, Integer.parseInt(val.toString()));
+				setter.invoke(obj, Integer.parseInt(value));
 			} else if (className == Long.class.getName()) {
-				setter.invoke(obj, Long.parseLong(val.toString()));
+				setter.invoke(obj, Long.parseLong(value));
 			} else if (className == Float.class.getName()) {
-				setter.invoke(obj, Float.parseFloat(val.toString()));
+				setter.invoke(obj, Float.parseFloat(value));
 			} else if (className == Double.class.getName()) {
-				setter.invoke(obj, Double.parseDouble(val.toString()));
+				setter.invoke(obj, Double.parseDouble(value));
 			} else {
 				setter.invoke(obj, val);
 			}
 		} catch (IllegalArgumentException e) {
-			log.error("Error while casting to {} from {}", val.getClass().getName(), className);
+			log.error("Error while casting to {} from {} - Message: {}", val.getClass().getName(), className, e.getMessage());
 		} catch (Exception e) {
 			// TODO: handle exception
 			e.printStackTrace();

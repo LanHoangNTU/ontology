@@ -107,7 +107,7 @@ public abstract class OntologyRepository<R> {
 	
 	// 2 Options: Do a recursive or ignore sub models
 	@SuppressWarnings({ "unchecked", "rawtypes" })
-	private Object mapToObject(Object obj, Resource res, Set<String> persistentKeys) {
+	private Object mapToObject(Object obj, Resource res, Set<String> persistentKeys, boolean shouldLoop) {
 		if (persistentKeys == null) {
 			persistentKeys = new HashSet<>();
 		}
@@ -152,11 +152,16 @@ public abstract class OntologyRepository<R> {
 						// object = mapToObject(object, stmt.getResource(), persistentKeys); // Recursive
 						
 						// ---- Set main key only (uri) ----
-						try {
-							modelManager.getExecutor(field.getType()).invokeSetName(object, stmt.getResource()); // Only set uri of sub model
-						} catch(ResourceRequiredException e) {
-							modelManager.getExecutor(field.getType()).invokeSetName(object, ""); 
-						} 
+						if (shouldLoop) {
+							object = mapToObject(object, stmt.getResource(), persistentKeys, false);
+						} else {
+							try {
+								// Only set uri of sub model
+								modelManager.getExecutor(field.getType()).invokeSetName(object, stmt.getResource());
+							} catch(ResourceRequiredException e) {
+								modelManager.getExecutor(field.getType()).invokeSetName(object, ""); 
+							} 
+						}
 						// -------------------
 						mapper.invokeSetter(field.getName(), obj, object);
 					} catch (Exception e) {
@@ -172,6 +177,12 @@ public abstract class OntologyRepository<R> {
 		return obj;
 	}
 	
+	/**
+	 * Save an entity to the model
+	 * 
+	 * @param obj
+	 * @return R
+	 */
 	public R save(R obj) {
 		IModelExecutor mapper = modelManager.getExecutor(type);
 		String baseUri = ontologyVariables.getBaseUri();
@@ -181,6 +192,7 @@ public abstract class OntologyRepository<R> {
 		Field fields[] = obj.getClass().getDeclaredFields();
 		
 		for (Field field: fields) {
+			String propUri = baseUri + field.getName();
 			if (field.isAnnotationPresent(Name.class)) {
 				root = model.createResource(baseUri +  mapper.invokeGetter(field.getName(), obj));
 			} else if (field.getType().equals(List.class)) {
@@ -191,12 +203,24 @@ public abstract class OntologyRepository<R> {
 				List<?> list = (List<?>) mapper.invokeGetter(field.getName(), obj);
 				Property prop = model.getProperty(baseUri + field.getName());
 				for (Object object : list) {
-					Resource subRes = model.getResource(subMapper.invokeGetName(object).toString());
-					properties.put(prop, subRes);
+					String subUri = subMapper.invokeGetName(object).toString();
+					if (StringUtils.isNotBlank(subUri)) {
+						Resource subRes = model.getResource(subUri);
+						properties.put(prop, subRes);
+					}
 				}
 				
+			} else if (field.getType().isAnnotationPresent(OntologyObject.class)) {
+				Object object = mapper.invokeGetter(field.getName(), obj);
+				IModelExecutor subMapper = modelManager.getExecutor(field.getType());
+				Property prop = model.getProperty(propUri);
+				String subUri = subMapper.invokeGetName(object).toString();
+				if (StringUtils.isNotBlank(subUri)) {
+					Resource subRes = model.getResource(subUri);
+					properties.put(prop, subRes);
+				}
 			} else {
-				properties.put(model.getProperty(baseUri + field.getName()), mapper.invokeGetter(field.getName(), obj));
+				properties.put(model.getProperty(propUri), mapper.invokeGetter(field.getName(), obj));
 			}
 		}
 		
@@ -229,6 +253,11 @@ public abstract class OntologyRepository<R> {
 		return obj;
 	}
 	
+	/**
+	 * Find all entity base on class
+	 * 
+	 * @return List<R>
+	 */
 	public List<R> find() {
 		ResIterator iterator = model.listResourcesWithProperty(RDF.type, klass);
 		List<R> results = new ArrayList<>();
@@ -236,7 +265,7 @@ public abstract class OntologyRepository<R> {
 			while (iterator.hasNext()) {
 				R obj;
 				obj = type.getDeclaredConstructor().newInstance();
-				mapToObject(obj, iterator.next(), null);
+				mapToObject(obj, iterator.next(), null, true);
 				results.add(obj);
 			}
 		} catch (Exception e) {
@@ -246,12 +275,19 @@ public abstract class OntologyRepository<R> {
 		return results;
 	}
 	
+	/**
+	 * 
+	 * Find an entity base on its unique URI
+	 * 
+	 * @param uriTag The entity's unique URI
+	 * @return Optional<R>
+	 */
 	public Optional<R> findByUriTag(String uriTag) {
 		Resource res = model.getResource(ontologyVariables.getBaseUri() + uriTag);
 		R obj = null;
 		try {
 			obj = type.getDeclaredConstructor().newInstance();
-			mapToObject(obj, res, null);
+			mapToObject(obj, res, null, true);
 		} catch (Exception e) {
 			e.printStackTrace();
 		}
@@ -259,6 +295,14 @@ public abstract class OntologyRepository<R> {
 		return Optional.ofNullable(obj);
 	}
 	
+	/**
+	 * 
+	 * Find an entity base on its property and value
+	 * 
+	 * @param property Entity's property
+	 * @param value property's values
+	 * @return Optional<R>
+	 */
 	public Optional<R> findByPropertyValue(String property, String value) {
 		R obj = null;
 		final String preffix = ontologyVariables.getPreffix();
@@ -282,7 +326,7 @@ public abstract class OntologyRepository<R> {
 		    	QuerySolution soln = results.next();
 		    	Resource res = soln.getResource("subject");
 		    	obj = type.getDeclaredConstructor().newInstance();
-		    	mapToObject(obj, res, null);
+		    	mapToObject(obj, res, null, true);
 		    }
 		} catch (Exception e) {
 			e.printStackTrace();
@@ -309,7 +353,7 @@ public abstract class OntologyRepository<R> {
 		    	QuerySolution soln = results.next();
 		    	Resource res = soln.getResource(subjectparam);
 		    	R obj = type.getDeclaredConstructor().newInstance();
-		    	mapToObject(obj, res, null);
+		    	mapToObject(obj, res, null, true);
 		    	list.add(obj);
 		    }
 		} catch (Exception e) {
@@ -331,7 +375,7 @@ public abstract class OntologyRepository<R> {
 		    	QuerySolution soln = results.next();
 		    	Resource res = soln.getResource(subjectparam);
 		    	R obj = type.getDeclaredConstructor().newInstance();
-		    	mapToObject(obj, res, null);
+		    	mapToObject(obj, res, null, true);
 		    	list.add(obj);
 		    }
 		} catch (Exception e) {
@@ -341,6 +385,12 @@ public abstract class OntologyRepository<R> {
 		return list;
 	}
 	
+	/**
+	 * 
+	 * Remove an Entity
+	 * 
+	 * @param obj
+	 */
 	public void remove(R obj) {
 		Resource res = model.getResource(executor.invokeGetName(obj).toString());
 		if (res != null) {
@@ -363,6 +413,11 @@ public abstract class OntologyRepository<R> {
 		}
 	}
 	
+	/**
+	 * Remove an entity base on its unique URI
+	 * 
+	 * @param uri
+	 */
 	public void remove(String uri) {
 		StmtIterator iter = model.getResource(uri).listProperties();
 		if (iter != null) {
