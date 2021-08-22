@@ -438,7 +438,7 @@ public abstract class OntologyRepository<R> {
 				}
 			}
 		} else {
-			log.warn("NULL");
+			log.warn("Cannot find entity");
 		}
 	}
 }
