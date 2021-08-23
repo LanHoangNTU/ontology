@@ -177,6 +177,11 @@ public abstract class OntologyRepository<R> {
 		return obj;
 	}
 	
+	private boolean validateUri(String uri) {
+		return (uri.startsWith(ontologyVariables.getBaseUri())
+				&& uri.indexOf('#') == uri.lastIndexOf('#'));
+	}
+	
 	/**
 	 * Save an entity to the model
 	 * 
@@ -194,7 +199,14 @@ public abstract class OntologyRepository<R> {
 		for (Field field: fields) {
 			String propUri = baseUri + field.getName();
 			if (field.isAnnotationPresent(Name.class)) {
-				root = model.createResource(baseUri +  mapper.invokeGetter(field.getName(), obj));
+				String uniqueUri = mapper.invokeGetter(field.getName(), obj).toString();
+				if (!uniqueUri.startsWith(baseUri)) {
+					uniqueUri = baseUri + uniqueUri;
+				}
+				if (!validateUri(uniqueUri)) {
+					return null;
+				}
+				root = model.createResource(uniqueUri);
 			} else if (field.getType().equals(List.class)) {
 				ParameterizedType fieldListType = (ParameterizedType) field.getGenericType();
 				Class<?> fieldListClass = (Class<?>) fieldListType.getActualTypeArguments()[0];
@@ -283,11 +295,30 @@ public abstract class OntologyRepository<R> {
 	 * @return Optional<R>
 	 */
 	public Optional<R> findByUriTag(String uriTag) {
-		Resource res = model.getResource(ontologyVariables.getBaseUri() + uriTag);
+		String baseUri = ontologyVariables.getBaseUri();
+		String uniqueUri;
+		if (uriTag.startsWith(baseUri)) {
+			uniqueUri = uriTag;
+		} else {
+			uniqueUri = baseUri + uriTag;
+		}
+		String queryStr = ontologyVariables.getPreffixes()
+				+ " SELECT ?subject \r\n"
+				+ " WHERE {\r\n"
+				+ " ?subject rdf:type <" + classUri + ">.\r\n"
+				+ " FILTER (?subject  = <" + uniqueUri + ">) \r\n"
+				+ " }";
 		R obj = null;
-		try {
-			obj = type.getDeclaredConstructor().newInstance();
-			mapToObject(obj, res, null, true);
+		Query query = QueryFactory.create(queryStr);
+		try (QueryExecution qexec = QueryExecutionFactory.create(query, model)) {
+			ResultSet results = qexec.execSelect();
+		    
+		    if (results.hasNext()) {
+		    	QuerySolution soln = results.next();
+		    	Resource res = soln.getResource("subject");
+		    	obj = type.getDeclaredConstructor().newInstance();
+		    	mapToObject(obj, res, null, true);
+		    }
 		} catch (Exception e) {
 			e.printStackTrace();
 		}
