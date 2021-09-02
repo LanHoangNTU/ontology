@@ -240,7 +240,7 @@ public abstract class OntologyRepository<R> {
 			Object value = entry.getValue();
 			if (value instanceof Resource) {
 				model.add(root, entry.getKey(), (Resource) entry.getValue());
-			} else {
+			} else if (entry.getValue() != null) {
 				model.add(root, entry.getKey(), entry.getValue().toString());
 			}
 		}
@@ -366,7 +366,7 @@ public abstract class OntologyRepository<R> {
 		return Optional.ofNullable(obj);
 	}
 	
-	public List<R> query(String subjectparam, QueryParam ...params) {
+	public List<R> query(QueryParam ...params) {
 		String paramStr = "";
 		for (QueryParam param: params) {
 			paramStr += param.toString();
@@ -382,7 +382,7 @@ public abstract class OntologyRepository<R> {
 		    
 		    while (results.hasNext()) {
 		    	QuerySolution soln = results.next();
-		    	Resource res = soln.getResource(subjectparam);
+		    	Resource res = soln.getResource("?subject");
 		    	R obj = type.getDeclaredConstructor().newInstance();
 		    	mapToObject(obj, res, null, true);
 		    	list.add(obj);
@@ -471,5 +471,33 @@ public abstract class OntologyRepository<R> {
 		} else {
 			log.warn("Cannot find entity");
 		}
+	}
+	
+	public boolean exists(String uriTag) {
+		String baseUri = ontologyVariables.getBaseUri();
+		String uniqueUri;
+		if (uriTag.startsWith(baseUri)) {
+			uniqueUri = uriTag;
+		} else {
+			uniqueUri = baseUri + uriTag;
+		}
+		
+		String queryStr = ontologyVariables.getPreffixes()
+				+ " SELECT ?subject \r\n"
+				+ " WHERE {\r\n"
+				+ " ?subject rdf:type <" + classUri + ">.\r\n"
+				+ " FILTER (?subject  = <" + uniqueUri + ">) \r\n"
+				+ " }";
+		
+		Query query = QueryFactory.create(queryStr);
+		try (QueryExecution qexec = QueryExecutionFactory.create(query, model)) {
+			ResultSet results = qexec.execSelect();
+		    
+		    return results.hasNext();
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+		
+		return false;
 	}
 }
