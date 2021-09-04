@@ -473,6 +473,12 @@ public abstract class OntologyRepository<R> {
 		}
 	}
 	
+	/**
+	 * <p>Check if a requested entity exists in database</p>
+	 * 
+	 * @param uriTag Entity's uri
+	 * @return	 <b>true</b> if exists, <b>false</b> if not exists
+	 */
 	public boolean exists(String uriTag) {
 		String baseUri = ontologyVariables.getBaseUri();
 		String uniqueUri;
@@ -487,6 +493,37 @@ public abstract class OntologyRepository<R> {
 				+ " WHERE {\r\n"
 				+ " ?subject rdf:type <" + classUri + ">.\r\n"
 				+ " FILTER (?subject  = <" + uniqueUri + ">) \r\n"
+				+ " }";
+		
+		Query query = QueryFactory.create(queryStr);
+		try (QueryExecution qexec = QueryExecutionFactory.create(query, model)) {
+			ResultSet results = qexec.execSelect();
+		    
+		    return results.hasNext();
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+		
+		return false;
+	}
+	
+	/**
+	 * <p>Check if a requested entity exists in database</p>
+	 * 
+	 * @param params Query parameters
+	 * @return	 <b>true</b> if exists, <b>false</b> if not exists
+	 */
+	public boolean exists(QueryParam ...params) {
+		String queryparams = " ";
+		for (QueryParam param : params) {
+			queryparams += param.toString();
+		}
+		
+		String queryStr = ontologyVariables.getPreffixes()
+				+ " SELECT ?subject \r\n"
+				+ " WHERE {\r\n"
+				+ " ?subject rdf:type <" + classUri + ">.\r\n"
+				+ queryparams
 				+ " }";
 		
 		Query query = QueryFactory.create(queryStr);

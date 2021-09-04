@@ -39,6 +39,6 @@ public class QueryParam {
 
 	@Override
 	public String toString() {
-		return subject + " " + property + " " + object + " .\n";
+		return subject + " " + property + " " + object + " .\r\n";
 	}
 }
