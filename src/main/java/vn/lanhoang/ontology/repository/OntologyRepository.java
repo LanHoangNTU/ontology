@@ -52,7 +52,6 @@ public abstract class OntologyRepository<R> {
 	private static final Logger log = LoggerFactory.getLogger(OntologyRepository.class);
 	private Class<R> type;
 	private String classUri;
-	private Model model;
 	private Property klass;
 	private OntologyVariables ontologyVariables;
 	private ModelManager modelManager = ModelManager.instance();
@@ -100,14 +99,17 @@ public abstract class OntologyRepository<R> {
 	
 	@PostConstruct
 	protected void init() {
-		this.model = ontologyVariables.getModel();
+		Model model = ontologyVariables.getModel();
 		this.classUri = ontologyVariables.getBaseUri() + classUri;
 		this.klass = model.getProperty(classUri);
 	}
 	
 	// 2 Options: Do a recursive or ignore sub models
 	@SuppressWarnings({ "unchecked", "rawtypes" })
-	private Object mapToObject(Object obj, Resource res, Set<String> persistentKeys, boolean shouldLoop) {
+	private Object mapToObject(Object obj, Resource res, 
+							   Set<String> persistentKeys, 
+							   boolean shouldLoop, Model model) {
+		
 		if (persistentKeys == null) {
 			persistentKeys = new HashSet<>();
 		}
@@ -153,7 +155,7 @@ public abstract class OntologyRepository<R> {
 						
 						// ---- Set main key only (uri) ----
 						if (shouldLoop) {
-							object = mapToObject(object, stmt.getResource(), persistentKeys, false);
+							object = mapToObject(object, stmt.getResource(), persistentKeys, false, model);
 						} else {
 							try {
 								// Only set uri of sub model
@@ -193,7 +195,7 @@ public abstract class OntologyRepository<R> {
 		String baseUri = ontologyVariables.getBaseUri();
 		Resource root = null;
 		Map<Property, Object> properties = new HashMap<>();
-		
+		Model model = ontologyVariables.getModel();
 		Field fields[] = obj.getClass().getDeclaredFields();
 		
 		for (Field field: fields) {
@@ -213,14 +215,18 @@ public abstract class OntologyRepository<R> {
 				IModelExecutor subMapper = modelManager.getExecutor(fieldListClass);
 				
 				List<?> list = (List<?>) mapper.invokeGetter(field.getName(), obj);
+				if (list == null) continue;
 				Property prop = model.getProperty(baseUri + field.getName());
+				List<Resource> subReses = new ArrayList<>();
 				for (Object object : list) {
 					String subUri = subMapper.invokeGetName(object).toString();
 					if (StringUtils.isNotBlank(subUri)) {
 						Resource subRes = model.getResource(subUri);
-						properties.put(prop, subRes);
+						subReses.add(subRes);
 					}
 				}
+				
+				properties.put(prop, subReses);
 				
 			} else if (field.getType().isAnnotationPresent(OntologyObject.class)) {
 				Object object = mapper.invokeGetter(field.getName(), obj);
@@ -240,6 +246,14 @@ public abstract class OntologyRepository<R> {
 			Object value = entry.getValue();
 			if (value instanceof Resource) {
 				model.add(root, entry.getKey(), (Resource) entry.getValue());
+			} else if (value instanceof List) {
+				if (((List) value).isEmpty()) {
+					root.removeAll(entry.getKey());
+				} else {
+					for (Resource subRes : (List<Resource>) value) {
+						model.add(root, entry.getKey(), subRes);
+					}
+				}
 			} else if (entry.getValue() != null) {
 				model.add(root, entry.getKey(), entry.getValue().toString());
 			}
@@ -271,19 +285,21 @@ public abstract class OntologyRepository<R> {
 	 * @return List<R>
 	 */
 	public List<R> find() {
+		Model model = ontologyVariables.getModel();
 		ResIterator iterator = model.listResourcesWithProperty(RDF.type, klass);
 		List<R> results = new ArrayList<>();
 		try {
 			while (iterator.hasNext()) {
 				R obj;
 				obj = type.getDeclaredConstructor().newInstance();
-				mapToObject(obj, iterator.next(), null, true);
+				mapToObject(obj, iterator.next(), null, true, model);
 				results.add(obj);
 			}
 		} catch (Exception e) {
 			e.printStackTrace();
 		}
 		
+		model.close();
 		return results;
 	}
 	
@@ -310,6 +326,7 @@ public abstract class OntologyRepository<R> {
 				+ " }";
 		R obj = null;
 		Query query = QueryFactory.create(queryStr);
+		Model model = ontologyVariables.getModel();
 		try (QueryExecution qexec = QueryExecutionFactory.create(query, model)) {
 			ResultSet results = qexec.execSelect();
 		    
@@ -317,12 +334,13 @@ public abstract class OntologyRepository<R> {
 		    	QuerySolution soln = results.next();
 		    	Resource res = soln.getResource("subject");
 		    	obj = type.getDeclaredConstructor().newInstance();
-		    	mapToObject(obj, res, null, true);
+		    	mapToObject(obj, res, null, true, model);
 		    }
 		} catch (Exception e) {
 			e.printStackTrace();
 		}
 		
+		model.close();
 		return Optional.ofNullable(obj);
 	}
 	
@@ -350,6 +368,7 @@ public abstract class OntologyRepository<R> {
 		queryStr = ontologyVariables.getPreffixes() + queryStr;
 		
 		Query query = QueryFactory.create(queryStr);
+		Model model = ontologyVariables.getModel();
 		try (QueryExecution qexec = QueryExecutionFactory.create(query, model)) {
 			ResultSet results = qexec.execSelect();
 		    
@@ -357,12 +376,13 @@ public abstract class OntologyRepository<R> {
 		    	QuerySolution soln = results.next();
 		    	Resource res = soln.getResource("subject");
 		    	obj = type.getDeclaredConstructor().newInstance();
-		    	mapToObject(obj, res, null, true);
+		    	mapToObject(obj, res, null, true, model);
 		    }
 		} catch (Exception e) {
 			e.printStackTrace();
 		}
 		
+		model.close();
 		return Optional.ofNullable(obj);
 	}
 	
@@ -377,6 +397,7 @@ public abstract class OntologyRepository<R> {
 		queryStr = ontologyVariables.getPreffixes() + queryStr;
 		
 		Query query = QueryFactory.create(queryStr);
+		Model model = ontologyVariables.getModel();
 		try (QueryExecution qexec = QueryExecutionFactory.create(query, model)) {
 			ResultSet results = qexec.execSelect();
 		    
@@ -384,13 +405,13 @@ public abstract class OntologyRepository<R> {
 		    	QuerySolution soln = results.next();
 		    	Resource res = soln.getResource("?subject");
 		    	R obj = type.getDeclaredConstructor().newInstance();
-		    	mapToObject(obj, res, null, true);
+		    	mapToObject(obj, res, null, true, model);
 		    	list.add(obj);
 		    }
 		} catch (Exception e) {
 			e.printStackTrace();
 		}
-		
+		model.close();
 		return list;
 	}
 	
@@ -399,6 +420,7 @@ public abstract class OntologyRepository<R> {
 		queryStr = ontologyVariables.getPreffixes() + queryStr;
 		
 		Query query = QueryFactory.create(queryStr);
+		Model model = ontologyVariables.getModel();
 		try (QueryExecution qexec = QueryExecutionFactory.create(query, model)) {
 			ResultSet results = qexec.execSelect();
 		    
@@ -406,13 +428,13 @@ public abstract class OntologyRepository<R> {
 		    	QuerySolution soln = results.next();
 		    	Resource res = soln.getResource(subjectparam);
 		    	R obj = type.getDeclaredConstructor().newInstance();
-		    	mapToObject(obj, res, null, true);
+		    	mapToObject(obj, res, null, true, model);
 		    	list.add(obj);
 		    }
 		} catch (Exception e) {
 			e.printStackTrace();
 		}
-		
+		model.close();
 		return list;
 	}
 	
@@ -423,6 +445,7 @@ public abstract class OntologyRepository<R> {
 	 * @param obj
 	 */
 	public void remove(R obj) {
+		Model model = ontologyVariables.getModel();
 		Resource res = model.getResource(executor.invokeGetName(obj).toString());
 		if (res != null) {
 			res.removeProperties();
@@ -442,6 +465,7 @@ public abstract class OntologyRepository<R> {
 				}
 			}
 		}
+		model.close();
 	}
 	
 	/**
@@ -450,9 +474,10 @@ public abstract class OntologyRepository<R> {
 	 * @param uri
 	 */
 	public void remove(String uri) {
+		Model model = ontologyVariables.getModel();
 		StmtIterator iter = model.getResource(uri).listProperties();
 		if (iter != null) {
-			this.model = model.remove(iter);
+			model = model.remove(iter);
 			OutputStream out = null;
 			try {
 				out = new FileOutputStream(ontologyVariables.getPath());
@@ -471,6 +496,8 @@ public abstract class OntologyRepository<R> {
 		} else {
 			log.warn("Cannot find entity");
 		}
+		
+		model.close();
 	}
 	
 	/**
@@ -496,14 +523,18 @@ public abstract class OntologyRepository<R> {
 				+ " }";
 		
 		Query query = QueryFactory.create(queryStr);
+		Model model = ontologyVariables.getModel();
 		try (QueryExecution qexec = QueryExecutionFactory.create(query, model)) {
 			ResultSet results = qexec.execSelect();
 		    
 		    return results.hasNext();
 		} catch (Exception e) {
 			e.printStackTrace();
+		} finally {
+			model.close();
 		}
-		
+
+		model.close();
 		return false;
 	}
 	
@@ -515,6 +546,7 @@ public abstract class OntologyRepository<R> {
 	 */
 	public boolean exists(QueryParam ...params) {
 		String queryparams = " ";
+		Model model = ontologyVariables.getModel();
 		for (QueryParam param : params) {
 			queryparams += param.toString();
 		}
@@ -533,8 +565,11 @@ public abstract class OntologyRepository<R> {
 		    return results.hasNext();
 		} catch (Exception e) {
 			e.printStackTrace();
+		} finally {
+			model.close();
 		}
-		
+
+		model.close();
 		return false;
 	}
 }

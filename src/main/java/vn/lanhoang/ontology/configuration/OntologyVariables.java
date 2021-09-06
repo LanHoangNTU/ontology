@@ -1,12 +1,12 @@
 package vn.lanhoang.ontology.configuration;
 
 import org.apache.jena.rdf.model.Model;
+import org.apache.jena.util.FileManager;
 
 public class OntologyVariables {
 	
 	private String baseUri;
 	private String path;
-	private Model model;
 	private Integer maxNestedCount;
 	private String preffix;
 	private String preffixes;
@@ -17,14 +17,13 @@ public class OntologyVariables {
 	public String getBaseUri() {
 		return this.baseUri;
 	}
+	
 	public void setBaseUri(String baseUri) {
 		this.baseUri = baseUri;
 	}
+	
 	public Model getModel() {
-		return model;
-	}
-	public void setModel(Model model) {
-		this.model = model;
+		return FileManager.getInternal().loadModelInternal(path);
 	}
 
 	public Integer getMaxNestedCount() {
