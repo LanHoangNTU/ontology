@@ -244,15 +244,17 @@ public abstract class OntologyRepository<R> {
 		
 		for (Map.Entry<Property, Object> entry : properties.entrySet()) {
 			Object value = entry.getValue();
+			Property key = entry.getKey();
+			//TODO Make better update statements
+			if (root.hasProperty(key)) {
+				root.removeAll(key);
+			}
+			
 			if (value instanceof Resource) {
 				model.add(root, entry.getKey(), (Resource) entry.getValue());
 			} else if (value instanceof List) {
-				if (((List) value).isEmpty()) {
-					root.removeAll(entry.getKey());
-				} else {
-					for (Resource subRes : (List<Resource>) value) {
-						model.add(root, entry.getKey(), subRes);
-					}
+				for (Resource subRes : (List<Resource>) value) {
+					model.add(root, entry.getKey(), subRes);
 				}
 			} else if (entry.getValue() != null) {
 				model.add(root, entry.getKey(), entry.getValue().toString());
@@ -415,8 +417,10 @@ public abstract class OntologyRepository<R> {
 		return list;
 	}
 	
-	public List<R> query(String subjectparam, String queryStr) {
+	public List<R> query(String queryStr) {
 		List<R> list = new ArrayList<>(); 
+		int index = queryStr.indexOf('?');
+		String subject = queryStr.substring(queryStr.indexOf('?'), queryStr.indexOf('\r', index)).trim();
 		queryStr = ontologyVariables.getPreffixes() + queryStr;
 		
 		Query query = QueryFactory.create(queryStr);
@@ -426,7 +430,7 @@ public abstract class OntologyRepository<R> {
 		    
 		    while (results.hasNext()) {
 		    	QuerySolution soln = results.next();
-		    	Resource res = soln.getResource(subjectparam);
+		    	Resource res = soln.getResource(subject);
 		    	R obj = type.getDeclaredConstructor().newInstance();
 		    	mapToObject(obj, res, null, true, model);
 		    	list.add(obj);
