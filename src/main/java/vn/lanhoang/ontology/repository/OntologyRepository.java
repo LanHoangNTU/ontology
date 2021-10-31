@@ -46,6 +46,7 @@ import vn.lanhoang.ontology.annotation.Name;
 import vn.lanhoang.ontology.annotation.OntologyObject;
 import vn.lanhoang.ontology.configuration.OntologyVariables;
 import vn.lanhoang.ontology.model.QueryParam;
+import vn.lanhoang.ontology.utils.ModelUtils;
 
 public abstract class OntologyRepository<R> {
 	
@@ -104,79 +105,10 @@ public abstract class OntologyRepository<R> {
 		this.klass = model.getProperty(classUri);
 	}
 	
-	// 2 Options: Do a recursive or ignore sub models
-	@SuppressWarnings({ "unchecked", "rawtypes" })
-	private Object mapToObject(Object obj, Resource res, 
+	private R mapToObject(R obj, Resource res, 
 							   Set<String> persistentKeys, 
 							   boolean shouldLoop, Model model) {
-		
-		if (persistentKeys == null) {
-			persistentKeys = new HashSet<>();
-		}
-		IModelExecutor mapper = modelManager.getExecutor(obj.getClass());
-		Field[] fields = mapper.getAllFields();
-		
-		if (persistentKeys.contains(res.toString())) {
-			mapper.invokeSetName(obj, res.toString());
-			return obj;
-		}
-		
-		persistentKeys.add(res.toString());
-		for (Field field : fields) {
-			Property p = model.getProperty(ontologyVariables.getBaseUri() + field.getName());
-			if (res.hasProperty(p)) {
-				Statement stmt = res.getProperty(p);
-				Class<?> classField = field.getType();
-				if (modelManager.isSupported(classField)) {
-					mapper.invokeSetter(field.getName(), obj, stmt.getObject());
-				} else if (classField.equals(List.class)) {
-					ParameterizedType fieldListType = (ParameterizedType) field.getGenericType();
-					Class<?> fieldListClass = (Class<?>) fieldListType.getActualTypeArguments()[0];
-					List list = ModelManager.createList(fieldListClass);
-					res.listProperties(p).forEach(propStmt -> {
-						// ---- Set main key only (uri) ----
-						try {
-							Constructor<?> ctor = fieldListClass.getConstructor();
-							Object object = ctor.newInstance(new Object[] {});
-							modelManager.getExecutor(fieldListClass).invokeSetName(object, propStmt.getResource()); // Only set uri of sub model
-							list.add(object);
-						} catch (Exception e) {
-							e.printStackTrace();
-						}
-					});
-					mapper.invokeSetter(field.getName(), obj, list);
-				} else if (classField.isAnnotationPresent(OntologyObject.class)) {
-					try {
-						Constructor<?> ctor = classField.getConstructor();
-						Object object = ctor.newInstance(new Object[] {});
-						
-						// ---- Recursive ----
-						// object = mapToObject(object, stmt.getResource(), persistentKeys); // Recursive
-						
-						// ---- Set main key only (uri) ----
-						if (shouldLoop) {
-							object = mapToObject(object, stmt.getResource(), persistentKeys, false, model);
-						} else {
-							try {
-								// Only set uri of sub model
-								modelManager.getExecutor(field.getType()).invokeSetName(object, stmt.getResource());
-							} catch(ResourceRequiredException e) {
-								modelManager.getExecutor(field.getType()).invokeSetName(object, ""); 
-							} 
-						}
-						// -------------------
-						mapper.invokeSetter(field.getName(), obj, object);
-					} catch (Exception e) {
-						e.printStackTrace();
-					}
-				} else {
-					throw new IllegalArgumentException(String.format("Type %s not supported yet", classField.getName()));
-				}
-			}
-		}	
-		
-		mapper.invokeSetName(obj, res.toString());
-		return obj;
+		return ModelUtils.mapToObject(obj, res, persistentKeys, true, model, ontologyVariables, type);
 	}
 	
 	private boolean validateUri(String uri) {
@@ -230,12 +162,16 @@ public abstract class OntologyRepository<R> {
 				
 			} else if (field.getType().isAnnotationPresent(OntologyObject.class)) {
 				Object object = mapper.invokeGetter(field.getName(), obj);
-				IModelExecutor subMapper = modelManager.getExecutor(field.getType());
-				Property prop = model.getProperty(propUri);
-				String subUri = subMapper.invokeGetName(object).toString();
-				if (StringUtils.isNotBlank(subUri)) {
-					Resource subRes = model.getResource(subUri);
-					properties.put(prop, subRes);
+				if (object != null) {
+					IModelExecutor subMapper = modelManager.getExecutor(field.getType());
+					Property prop = model.getProperty(propUri);
+					String subUri = subMapper.invokeGetName(object).toString();
+					if (StringUtils.isNotBlank(subUri)) {
+						Resource subRes = model.getResource(subUri);
+						properties.put(prop, subRes);
+					} else {
+						properties.put(prop, null);
+					}
 				}
 			} else {
 				properties.put(model.getProperty(propUri), mapper.invokeGetter(field.getName(), obj));
@@ -246,18 +182,18 @@ public abstract class OntologyRepository<R> {
 			Object value = entry.getValue();
 			Property key = entry.getKey();
 			//TODO Make better update statements
-			if (root.hasProperty(key)) {
-				root.removeAll(key);
-			}
+			root.removeAll(key);
 			
-			if (value instanceof Resource) {
-				model.add(root, entry.getKey(), (Resource) entry.getValue());
-			} else if (value instanceof List) {
-				for (Resource subRes : (List<Resource>) value) {
-					model.add(root, entry.getKey(), subRes);
+			if (value != null) {
+				if (value instanceof Resource) {
+					model.add(root, entry.getKey(), (Resource) entry.getValue());
+				} else if (value instanceof List) {
+					for (Resource subRes : (List<Resource>) value) {
+						model.add(root, entry.getKey(), subRes);
+					}
+				} else if (entry.getValue() != null) {
+					model.add(root, entry.getKey(), entry.getValue().toString());
 				}
-			} else if (entry.getValue() != null) {
-				model.add(root, entry.getKey(), entry.getValue().toString());
 			}
 		}
 		model.add(root, RDF.type, model.getResource(classUri));
@@ -388,6 +324,34 @@ public abstract class OntologyRepository<R> {
 		return Optional.ofNullable(obj);
 	}
 	
+	public Optional<R> findOne(QueryParam ...params) {
+		String paramStr = "";
+		for (QueryParam param: params) {
+			paramStr += param.toString();
+		}
+		
+		String queryStr = "SELECT ?subject\nWHERE {\n" + paramStr + "\n}";
+		queryStr = ontologyVariables.getPreffixes() + queryStr;
+		
+		Query query = QueryFactory.create(queryStr);
+		Model model = ontologyVariables.getModel();
+		R obj = null;
+		try (QueryExecution qexec = QueryExecutionFactory.create(query, model)) {
+			ResultSet results = qexec.execSelect();
+		    
+		    if (results.hasNext()) {
+		    	QuerySolution soln = results.next();
+		    	Resource res = soln.getResource("?subject");
+		    	obj = type.getDeclaredConstructor().newInstance();
+		    	mapToObject(obj, res, null, true, model);
+		    }
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+		model.close();
+		return Optional.ofNullable(obj);
+	}
+	
 	public List<R> query(QueryParam ...params) {
 		String paramStr = "";
 		for (QueryParam param: params) {
@@ -417,10 +381,23 @@ public abstract class OntologyRepository<R> {
 		return list;
 	}
 	
+	/**
+	 * Execute a SPARQL query
+	 * 
+	 * 
+	 * @param queryStr Query string
+	 * @return Corresponding List of specified type
+	 */
 	public List<R> query(String queryStr) {
 		List<R> list = new ArrayList<>(); 
-		int index = queryStr.indexOf('?');
-		String subject = queryStr.substring(queryStr.indexOf('?'), queryStr.indexOf('\r', index)).trim();
+		String words[] = queryStr.split("\\s+");
+		String subject = "?subject";
+		for (String word: words) {
+			if (word.startsWith("?")) {
+				subject = word;
+				break;
+			}
+		}
 		queryStr = ontologyVariables.getPreffixes() + queryStr;
 		
 		Query query = QueryFactory.create(queryStr);
@@ -479,7 +456,15 @@ public abstract class OntologyRepository<R> {
 	 */
 	public void remove(String uri) {
 		Model model = ontologyVariables.getModel();
-		StmtIterator iter = model.getResource(uri).listProperties();
+		String baseUri = ontologyVariables.getBaseUri();
+		String uniqueUri;
+		if (uri.startsWith(baseUri)) {
+			uniqueUri = uri;
+		} else {
+			uniqueUri = baseUri + uri;
+		}
+		
+		StmtIterator iter = model.getResource(uniqueUri).listProperties();
 		if (iter != null) {
 			model = model.remove(iter);
 			OutputStream out = null;
@@ -575,5 +560,46 @@ public abstract class OntologyRepository<R> {
 
 		model.close();
 		return false;
+	}
+	
+	public Map<String, List<R>> groupBy(String property) {
+		Map<String, List<R>> group = new HashMap<>();
+		try {
+			List<R> list = this.find();
+			IModelExecutor mapper = modelManager.getExecutor(type);
+			Field field = type.getDeclaredField(property);
+			if (field.getType() == List.class) {
+				throw new IllegalArgumentException();
+			}
+			
+			for (R obj: list) {
+				String fieldValue;
+				try {
+					if (field.getType().isAnnotationPresent(OntologyObject.class)) {
+						IModelExecutor subMapper = modelManager.getExecutor(field.getType());
+						fieldValue = String.valueOf(subMapper.invokeGetName(mapper.invokeGetter(field.getName(), obj)));
+					} else {
+						fieldValue = String.valueOf(mapper.invokeGetter(field.getName(), obj));
+					}
+				} catch (Exception e) {
+					fieldValue = "no_category";
+				}
+				
+				if (!group.containsKey(fieldValue)) {
+					group.put(fieldValue, new ArrayList<>());
+				}
+				group.get(fieldValue).add(obj);
+			}
+			
+			return group;
+		} catch (NoSuchFieldException e) {
+			log.info("Field {} not found for grouping", property);
+			
+			return new HashMap<>();
+		} catch (IllegalArgumentException e) {
+			log.info("Cannot group field type of List");
+			
+			return new HashMap<>();
+		}
 	}
 }
