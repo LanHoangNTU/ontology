@@ -10,7 +10,7 @@
 	</parent>
 	<groupId>vn.lanhoang</groupId>
 	<artifactId>ontology</artifactId>
-	<version>0.0.14</version>
+	<version>0.0.15</version>
 	<name>ontology</name>
 	<description>Demo project for Spring Boot</description>
 	<packaging>jar</packaging>
@@ -61,15 +61,5 @@
 			<plugins>
 			</plugins>
 		</pluginManagement>
-        <plugins>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-compiler-plugin</artifactId>
-                <configuration>
-                    <source>11</source>
-                    <target>11</target>
-                </configuration>
-            </plugin>
-        </plugins>
     </build>
 </project>
