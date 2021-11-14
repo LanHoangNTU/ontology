@@ -27,7 +27,7 @@ public class QueryParser {
 		Set<String> subjects = new HashSet<>();
 		String result = parse(queryContainer, subjects, new AtomicInteger(0));
 		result = RegExUtils.removeFirst(result, "\\{");
-		return StringUtils.removeEnd(result, "}").concat("\r\nGROUPBY ?subject");
+		return StringUtils.removeEnd(result, "}").concat("\n\tGROUPBY ?subject");
 	}
 	
 	private String parse(QueryContainer queryContainer, Set<String> subjects, AtomicInteger aNo) {
@@ -45,22 +45,30 @@ public class QueryParser {
 		for (QueryContainer container: queryContainer.getQueries()) {
 			conditions.add(parse(container, subjects, aNo));
 		}
+		
+		StringBuilder sb = new StringBuilder();
+		String wheres = String.join(isAnd ? "\n\t\t.\n\t\t": "\n\t\tUNION\n\t\t", conditions);
+		sb.append("{\n\t");
+		sb.append("SELECT ?subject \n\t");
+		sb.append("WHERE {\n\t\t");
+		sb.append(wheres.replace("\n", "\n\t"));
+		sb.append("\n\t\t}\n");
+		sb.append("\t}");
 
-		return "{\r\n SELECT ?subject \r\n"
-				+ "WHERE {\r\n".concat( String.join(isAnd ? "\n.\n": "\nUNION\n", conditions).concat("\r\n}") )
-				+ "\r\n }";
+		return sb.toString().replace("\n", "\n\t");
 	}
 	
 	private String getQueryContains(QueryDTO queryDTO, int no) {
 		String pred = prefix.concat(queryDTO.getPredicate());
 		String object = "v" + no;
 		
-		return String.format(
-			"{\r\n"
-			+ "		?subject %s ?%s \r\n"
-			+ "		FILTER (regex(?%s, \"%s\", \"i\"))\r\n"
-			+ "}"
-		, pred, object, object, queryDTO.getObject());
+		StringBuilder sb = new StringBuilder();
+		sb.append("\t{ \t");
+		sb.append(String.format("?subject %s ?%s .\t", pred, object));
+		sb.append(String.format("FILTER (regex(?%s, \"%s\", \"i\")) \t", object, queryDTO.getObject()));
+		sb.append(" }");
+		
+		return sb.toString();
 	}
 	
 	private String getQueryEqual(QueryDTO queryDTO) {

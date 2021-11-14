@@ -140,6 +140,7 @@ public abstract class OntologyRepository<R> {
 				if (!validateUri(uniqueUri)) {
 					return null;
 				}
+				log.info("Unique URI: {}", uniqueUri);
 				root = model.createResource(uniqueUri);
 			} else if (field.getType().equals(List.class)) {
 				ParameterizedType fieldListType = (ParameterizedType) field.getGenericType();
@@ -183,6 +184,7 @@ public abstract class OntologyRepository<R> {
 			Property key = entry.getKey();
 			//TODO Make better update statements
 			root.removeAll(key);
+			log.info("{} - {}", key.toString(), value);
 			
 			if (value != null) {
 				if (value instanceof Resource) {
@@ -191,8 +193,8 @@ public abstract class OntologyRepository<R> {
 					for (Resource subRes : (List<Resource>) value) {
 						model.add(root, entry.getKey(), subRes);
 					}
-				} else if (entry.getValue() != null) {
-					model.add(root, entry.getKey(), entry.getValue().toString());
+				} else if (value != null) {
+					model.add(root, key, value.toString());
 				}
 			}
 		}
@@ -202,7 +204,7 @@ public abstract class OntologyRepository<R> {
 		try {
 			out = new FileOutputStream(ontologyVariables.getPath());
 			RDFDataMgr.write(out, model, Lang.RDFXML);
-		} catch (FileNotFoundException e) {
+		} catch (Exception e) {
 			e.printStackTrace();
 		} finally {
 			if (out != null) {
