@@ -49,12 +49,15 @@ public class ModelUtils {
 					ParameterizedType fieldListType = (ParameterizedType) field.getGenericType();
 					Class<?> fieldListClass = (Class<?>) fieldListType.getActualTypeArguments()[0];
 					List list = ModelManager.createList(fieldListClass);
+					Set<String> finalPersistentKeys = persistentKeys;
 					res.listProperties(p).forEach(propStmt -> {
 						// ---- Set main key only (uri) ----
 						try {
 							Constructor<?> ctor = fieldListClass.getConstructor();
 							Object object = ctor.newInstance(new Object[] {});
-							modelManager.getExecutor(fieldListClass).invokeSetName(object, propStmt.getResource()); // Only set uri of sub model
+
+							object = mapToObject(object, propStmt.getResource(), finalPersistentKeys, false, model, ontologyVariables, fieldListClass);
+
 							list.add(object);
 						} catch (Exception e) {
 							e.printStackTrace();
