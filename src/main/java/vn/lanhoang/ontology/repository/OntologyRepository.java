@@ -239,8 +239,14 @@ public abstract class OntologyRepository<R> {
 		String queryStr = ontologyVariables.getPreffixes()
 				+ " SELECT ?subject \r\n"
 				+ " WHERE { "
-				+ " { { ?subject rdf:type <" + classUri + "> } UNION { ?subject rdfs:subClassOf <" + classUri + "> } } ."
-				+ " }";
+				+ " 	{ "
+				+ " 		{ ?subject rdf:type <" + classUri + "> } "
+				+ "			UNION "
+				+ "			{ ?o rdfs:subClassOf <" + classUri + "> } . { ?subject rdf:type ?o } "
+				+ " 	} . "
+				+ " }"
+				+ "GROUP BY ?subject";
+
 		List<R> objects = new ArrayList<>();
 
 		Query query = QueryFactory.create(queryStr);
@@ -281,9 +287,14 @@ public abstract class OntologyRepository<R> {
 		String queryStr = ontologyVariables.getPreffixes()
 				+ " SELECT ?subject \r\n"
 				+ " WHERE {\r\n"
-				+ " { { ?subject rdf:type <" + classUri + "> } UNION { ?subject rdfs:subClassOf <" + classUri + "> } } ."
-				+ " FILTER (?subject  = <" + uniqueUri + ">) \r\n"
-				+ " }";
+				+ " 	{ "
+				+ " 		{ ?subject rdf:type <" + classUri + "> } "
+				+ "			UNION "
+				+ "			{ ?o rdfs:subClassOf <" + classUri + "> } . { ?subject rdf:type ?o } "
+				+ " 	} . "
+				+ " 	FILTER (?subject  = <" + uniqueUri + ">) \r\n"
+				+ " }"
+				+ "GROUP BY ?subject";
 		R obj = null;
 		Query query = QueryFactory.create(queryStr);
 		Model model = ontologyVariables.getModel();
@@ -318,8 +329,13 @@ public abstract class OntologyRepository<R> {
 		String queryStr = String.format(
 			"SELECT ?subject WHERE { "
 			+ "?subject %s \"%s\" .\n"
-			+ " { { ?subject rdf:type <" + classUri + "> } UNION { ?subject rdfs:subClassOf <" + classUri + "> } } ."
-			+ " }", 
+			+ " 	{ "
+			+ " 		{ ?subject rdf:type <" + classUri + "> } "
+			+ "			UNION "
+			+ "			{ ?o rdfs:subClassOf <" + classUri + "> } . { ?subject rdf:type ?o } "
+			+ " 	} . "
+			+ " }"
+			+ " GROUP BY ?subject",
 			preffix + property,
 			value
 		);
@@ -353,9 +369,14 @@ public abstract class OntologyRepository<R> {
 		
 		String queryStr = "SELECT ?subject " +
 				"WHERE {"
-				+ " { { ?subject rdf:type <" + classUri + "> } UNION { ?subject rdfs:subClassOf <" + classUri + "> } } ."
+				+ " 	{ "
+				+ " 		{ ?subject rdf:type <" + classUri + "> } "
+				+ "			UNION "
+				+ "			{ ?o rdfs:subClassOf <" + classUri + "> } . { ?subject rdf:type ?o } "
+				+ " 	} . "
 				+ paramStr
-				+ "\n}";
+				+ " } "
+				+ " GROUP BY ?subject";
 		queryStr = ontologyVariables.getPreffixes() + queryStr;
 		
 		Query query = QueryFactory.create(queryStr);
@@ -385,9 +406,14 @@ public abstract class OntologyRepository<R> {
 
 		String queryStr = "SELECT ?subject " +
 				"WHERE {"
-				+ " { { ?subject rdf:type <" + classUri + "> } UNION { ?subject rdfs:subClassOf <" + classUri + "> } } ."
+				+ " 	{ "
+				+ " 		{ ?subject rdf:type <" + classUri + "> } "
+				+ "			UNION "
+				+ "			{ ?o rdfs:subClassOf <" + classUri + "> } . { ?subject rdf:type ?o } "
+				+ " 	} ."
 				+ paramStr
-				+ "}";
+				+ " }"
+				+ " GROUP BY ?subject";
 		List<R> list = new ArrayList<>(); 
 		queryStr = ontologyVariables.getPreffixes() + queryStr;
 		
@@ -537,9 +563,14 @@ public abstract class OntologyRepository<R> {
 		String queryStr = ontologyVariables.getPreffixes()
 				+ " SELECT ?subject \r\n"
 				+ " WHERE {\r\n"
-				+ " { { ?subject rdf:type <" + classUri + "> } UNION { ?subject rdfs:subClassOf <" + classUri + "> } } ."
-				+ " FILTER (?subject  = <" + uniqueUri + ">) \r\n"
-				+ " }";
+				+ " 	{ "
+				+ " 		{ ?subject rdf:type <" + classUri + "> } "
+				+ "			UNION "
+				+ "			{ ?o rdfs:subClassOf <" + classUri + "> } . { ?subject rdf:type ?o } "
+				+ " 	} . "
+				+ " 	FILTER (?subject  = <" + uniqueUri + ">) \r\n"
+				+ " }"
+				+ " GROUP BY ?subject";
 		
 		Query query = QueryFactory.create(queryStr);
 		Model model = ontologyVariables.getModel();
@@ -573,9 +604,14 @@ public abstract class OntologyRepository<R> {
 		String queryStr = ontologyVariables.getPreffixes()
 				+ " SELECT ?subject \r\n"
 				+ " WHERE {\r\n"
-				+ " { { ?subject rdf:type <" + classUri + "> } UNION { ?subject rdfs:subClassOf <" + classUri + "> } } ."
+				+ " 	{ "
+				+ " 		{ ?subject rdf:type <" + classUri + "> } "
+				+ "			UNION "
+				+ "			{ ?o rdfs:subClassOf <" + classUri + "> } . { ?subject rdf:type ?o } "
+				+ " 	} . "
 				+ queryparams
-				+ " }";
+				+ " }"
+				+ " GROUP BY ?subject";
 		
 		Query query = QueryFactory.create(queryStr);
 		try (QueryExecution qexec = QueryExecutionFactory.create(query, model)) {
