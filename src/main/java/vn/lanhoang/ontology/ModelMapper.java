@@ -4,175 +4,154 @@ import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.Hashtable;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.apache.commons.lang3.ArrayUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import org.springframework.util.ReflectionUtils;
 import vn.lanhoang.ontology.annotation.Name;
 
 public class ModelMapper implements IModelExecutor {
 	
 	private static final Logger log = LoggerFactory.getLogger(ModelMapper.class);
 
-	private Field[] fields;
-	private String[] fieldNameArray;
-	private Method[] getSetArray;
+	private Map<Field, Method[]> fieldMaps;
 	private Method setName;
 	private Field nameField;
+	private final Class<?> type;
 
 	public ModelMapper(Class<?> type) {
+		this.type = type;
 		ModelManager modelManager = ModelManager.instance();
 		if (modelManager.getExecutors().containsKey(type)) {
 			return;
 		}
-		boolean checked = false;
-		fields = type.getDeclaredFields();
-		Method methods[] = type.getDeclaredMethods();
-		List<Method> getterList = new ArrayList<>(fields.length);
-		List<Method> setterList = new ArrayList<>(fields.length);
+		final AtomicBoolean checked = new AtomicBoolean(false);
+		Method[] methods = ReflectionUtils.getAllDeclaredMethods(type);
 
-		fieldNameArray = new String[fields.length];
-		getSetArray = new Method[fields.length * 2];
+		List<Method> getterList = new ArrayList<>();
+		List<Method> setterList = new ArrayList<>();
+		fieldMaps = new Hashtable<>();
 		
 		validateAnnotations();
 		
-		for(Method method : methods) {
+		for (Method method : methods) {
 			if (method.getName().startsWith("get")) {
 				getterList.add(method);
 			} else if (method.getName().startsWith("set")) {
 				setterList.add(method);
 			}
 		}
-		
-		int index = 0;
-		for (Field field : fields) {
+
+		AtomicInteger atomicIndex = new AtomicInteger(0);
+		ReflectionUtils.doWithFields(type, field -> {
 			String fieldName = field.getName();
-			
+			int index = atomicIndex.get();
+
 			Optional<Method> getter = getterList.stream()
-					.filter( med -> 
-						(med.getName().length() == (fieldName.length() + 3)) 
-						&& med.getName().toLowerCase().endsWith(fieldName.toLowerCase()))
+					.filter( med ->
+							(med.getName().length() == (fieldName.length() + 3))
+									&& med.getName().toLowerCase().endsWith(fieldName.toLowerCase()))
 					.findFirst();
-			
+
 			Optional<Method> setter = setterList.stream()
-					.filter( med -> 
-						(med.getName().length() == (fieldName.length() + 3)) 
-						&& med.getName().toLowerCase().endsWith(fieldName.toLowerCase()))
+					.filter( med ->
+							(med.getName().length() == (fieldName.length() + 3))
+									&& med.getName().toLowerCase().endsWith(fieldName.toLowerCase()))
 					.findFirst();
-			
-			if (getter.isEmpty()) {
-				throw new IllegalArgumentException("No getter method for field '" + field.getName() + "' found");
-			} else if (setter.isEmpty()) {
-				throw new IllegalArgumentException("No setter method for field '" + field.getName() + "' found");
+
+			if (!getter.isPresent() || !setter.isPresent()) {
+				throw new IllegalArgumentException("No getter/setter method for field '" + field.getName() + "' found");
 			} else {
-				fieldNameArray[index / 2] = field.getName();
-				getSetArray[index] = getter.get();
-				getSetArray[index + 1] = setter.get();
-				index += 2;
-				
-				if (!checked) {
+				Method[] getSet =  { getter.get(), setter.get() };
+				fieldMaps.put(field, getSet);
+				atomicIndex.set(index + 2);
+
+				if (!checked.get()) {
 					if (field.isAnnotationPresent(Name.class)) {
 						this.setName = setter.get();
 						this.nameField = field;
-						checked = true;
+						checked.set(true);
 					}
 				}
 			}
-		}
+		});
 		
 		modelManager.getExecutors().put(type, this);
 	}
 
 	@Override
-	public Object invokeGetter(String field, Object obj) {
-		int index = ArrayUtils.indexOf(fieldNameArray, field);
-		if (index >= 0) {
-			try {
-				return getSetArray[index * 2].invoke(obj);
-			} catch (IllegalAccessException | IllegalArgumentException | InvocationTargetException e) {
-				e.printStackTrace();
-			}
+	public Object invokeGetter(Field field, Object obj) throws IllegalAccessException, InvocationTargetException {
+		if (fieldMaps.containsKey(field)) {
+			return fieldMaps.get(field)[0].invoke(obj);
 		}
+
 		return null;
 		
 	}
 
 	@Override
-	public void invokeSetter(String field, Object obj, Object val) {
-		int index = ArrayUtils.indexOf(fieldNameArray, field);
-		int setIndex = index * 2 + 1;
-		if (index >= 0) {
+	public void invokeSetter(Field field, Object obj, Object val) throws InvocationTargetException, IllegalAccessException {
+		if (fieldMaps.containsKey(field)) {
+			Method setter = fieldMaps.get(field)[1];
 			String value = val.toString();
 			try {
-				if (fields[index].getType() == String.class) {
+				if (field.getType() == String.class) {
 					if (value.contains("^^")) {
 						value = value.substring(0, value.indexOf('^'));
 					}
-					getSetArray[setIndex].invoke(obj, value);
+					setter.invoke(obj, value);
 				} else {
-					getSetArray[setIndex].invoke(obj, fields[index].getType().cast(val));
+					setter.invoke(obj, field.getType().cast(val));
 				}
 			} catch (ClassCastException e) {
-				try {
-					if (fields[index].getType().equals(List.class)) {
-						getSetArray[setIndex].invoke(obj, fields[index].getType().cast(val));
-					} else {
-						parse(fields[index].getType().getName(), getSetArray[setIndex], obj, val);
-					}
-				} catch (Exception e1) {
-					// TODO Auto-generated catch block
-					log.error("Error while casting to {} from {}", val.getClass().getName(), fields[index].getType().getName());
-					e1.printStackTrace();
+				if (field.getType().equals(List.class)) {
+					setter.invoke(obj, field.getType().cast(val));
+				} else {
+					parse(field.getType().getName(), setter, obj, val);
 				}
-			} catch (Exception e) {
-				log.error("Error while casting to {} from {}", val.getClass().getName(), fields[index].getType().getName());
-				e.printStackTrace();
 			}
 		}
 	}
 
 	@Override
-	public void invokeSetName(Object obj, Object val) {
-		try {
-			// TODO Handle different types
-			setName.invoke(obj, nameField.getType().cast(val.toString()));
-		} catch (IllegalAccessException | IllegalArgumentException | InvocationTargetException e) {
-			e.printStackTrace();
-		}
-		
+	public void invokeSetName(Object obj, Object val) throws InvocationTargetException, IllegalAccessException {
+		setName.invoke(obj, nameField.getType().cast(val.toString()));
 	}
 
 	@Override
-	public Object invokeGetName(Object obj) {
-		int index = ArrayUtils.indexOf(fieldNameArray, nameField.getName());
-		if (index >= 0) {
-			try {
-				return getSetArray[index * 2].invoke(obj);
-			} catch (IllegalAccessException | IllegalArgumentException | InvocationTargetException e) {
-				e.printStackTrace();
-			}
+	public Object invokeGetName(Object obj) throws InvocationTargetException, IllegalAccessException {
+		if (fieldMaps.containsKey(nameField)) {
+			return fieldMaps.get(nameField)[0].invoke(obj);
 		}
 		return null;
 	}
 
 	@Override
-	public Field[] getAllFields() {
-		return fields;
+	public Field getNameField() {
+		return this.nameField;
 	}
-	
-	private void validateAnnotations() {
-		boolean hasName = false;
-		for (Field field : fields) {
-			if (field.isAnnotationPresent(Name.class)) {
-				if (hasName) { throw new IllegalArgumentException("Ontology object have more than one name"); }
-				hasName = true;
-			} 
-		}
 
-		if (!hasName) { throw new NullPointerException("Ontology object's unique uri not present"); }
+	private void validateAnnotations() {
+		AtomicBoolean hasName = new AtomicBoolean(false);
+		ReflectionUtils.doWithFields(type, field -> {
+			if (field.isAnnotationPresent(Name.class)) {
+				if (hasName.get()) { throw new IllegalArgumentException("Ontology object have more than one name"); }
+				hasName.set(true);
+			}
+		});
+
+		if (!hasName.get()) { throw new NullPointerException("Ontology object's unique uri not present"); }
 	}
 	
 	public void parse(String className, Method setter, Object obj, Object val) {
@@ -181,22 +160,19 @@ public class ModelMapper implements IModelExecutor {
 			value = value.substring(0, value.indexOf('^'));
 		}
 		try {
-			if (className == Integer.class.getName()) {
+			if (Objects.equals(className, Integer.class.getName())) {
 				setter.invoke(obj, Integer.parseInt(value));
-			} else if (className == Long.class.getName()) {
+			} else if (Objects.equals(className, Long.class.getName())) {
 				setter.invoke(obj, Long.parseLong(value));
-			} else if (className == Float.class.getName()) {
+			} else if (Objects.equals(className, Float.class.getName())) {
 				setter.invoke(obj, Float.parseFloat(value));
-			} else if (className == Double.class.getName()) {
+			} else if (Objects.equals(className, Double.class.getName())) {
 				setter.invoke(obj, Double.parseDouble(value));
 			} else {
 				setter.invoke(obj, val);
 			}
-		} catch (IllegalArgumentException e) {
+		} catch (IllegalArgumentException | IllegalAccessException | InvocationTargetException e) {
 			log.error("Error while casting to {} from {} - Message: {}", val.getClass().getName(), className, e.getMessage());
-		} catch (Exception e) {
-			// TODO: handle exception
-			e.printStackTrace();
 		}
 	}
 }

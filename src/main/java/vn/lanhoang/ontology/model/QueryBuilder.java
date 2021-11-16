@@ -19,6 +19,6 @@ public class QueryBuilder {
 	}
 	
 	public QueryParam[] toArray() {
-		return queries.toArray(QueryParam[]::new);
+		return queries.toArray(new QueryParam[0]);
 	}
 }
