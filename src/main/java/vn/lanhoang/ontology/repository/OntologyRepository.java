@@ -117,7 +117,7 @@ public abstract class OntologyRepository<R> {
 	public R save(R obj) {
 		IModelExecutor mapper = modelManager.getExecutor(type);
 		String baseUri = ontologyVariables.getBaseUri();
-		AtomicReference<Resource> root = null;
+		AtomicReference<Resource> root = new AtomicReference<>();
 		Map<Property, Object> properties = new HashMap<>();
 		Model model = ontologyVariables.getModel();
 
@@ -145,22 +145,19 @@ public abstract class OntologyRepository<R> {
 						IModelExecutor subMapper = modelManager.getExecutor(fieldListClass);
 
 						List<?> list = (List<?>) mapper.invokeGetter(field, obj);
-						if (list == null) {
-							return;
-						}
-
-						Property prop = model.getProperty(baseUri + field.getName());
-						List<Resource> subReses = new ArrayList<>();
-						for (Object object : list) {
-							String subUri = subMapper.invokeGetName(object).toString();
-							if (StringUtils.isNotBlank(subUri)) {
-								Resource subRes = model.getResource(subUri);
-								subReses.add(subRes);
+						if (list != null) {
+							Property prop = model.getProperty(baseUri + field.getName());
+							List<Resource> subReses = new ArrayList<>();
+							for (Object object : list) {
+								String subUri = subMapper.invokeGetName(object).toString();
+								if (StringUtils.isNotBlank(subUri)) {
+									Resource subRes = model.getResource(subUri);
+									subReses.add(subRes);
+								}
 							}
+
+							properties.put(prop, subReses);
 						}
-
-						properties.put(prop, subReses);
-
 					} else if (field.getType().isAnnotationPresent(OntologyObject.class)) {
 						Object object = mapper.invokeGetter(field, obj);
 						if (object != null) {
